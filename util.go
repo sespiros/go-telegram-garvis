@@ -11,3 +11,8 @@ type UserRule struct {
 	Count    int
 	Limit    int
 }
+
+type User struct {
+	UserID   int
+	UserName string
+}
