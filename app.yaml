@@ -4,3 +4,7 @@ api_version: go1
 handlers:
 - url: /.*
   script: _go_app
+
+skip_files:
+- \.gitignore
+- ^\.git/.*
