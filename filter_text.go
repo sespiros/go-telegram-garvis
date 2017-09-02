@@ -3,6 +3,7 @@ package garvis
 import (
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 
 	"cloud.google.com/go/datastore"
@@ -13,16 +14,15 @@ import (
 )
 
 type TextFilter struct {
-	bot   *tgbotapi.BotAPI
-	ctx   context.Context
-	done  chan bool
-	rules map[string]string
+	bot  *tgbotapi.BotAPI
+	ctx  context.Context
+	done chan bool
 }
 
 type TextFilterRule struct {
 	ChatID    int64
 	UserID    int
-	Text      string
+	RxText    string
 	TextReply string
 	Count     int
 	Limit     int
@@ -65,10 +65,9 @@ func (filter TextFilter) Run(update tgbotapi.Update) error {
 			glog.Errorf(ctx, "client.Get: %v", err)
 		}
 
-		filter.rules = make(map[string]string)
-		filter.rules[rule.Text] = rule.TextReply
+		rxRule := regexp.MustCompile(rule.RxText)
 
-		if i := strings.Index(update.Message.Text, rule.Text); i != -1 {
+		if rxRule.MatchString(update.Message.Text) {
 			rule.Count = rule.Count + 1
 			if rule.Count >= rule.Limit {
 				rule.Count = 0
@@ -76,7 +75,7 @@ func (filter TextFilter) Run(update tgbotapi.Update) error {
 				if err != nil {
 					glog.Errorf(ctx, "client.Put(reset): %v", err)
 				}
-				filter.Trigger(update, rule.Text)
+				filter.Trigger(update, rule)
 			}
 			_, err = client.Put(ctx, ruleKey, &rule)
 			if err != nil {
@@ -92,11 +91,10 @@ func (filter TextFilter) Run(update tgbotapi.Update) error {
 			glog.Errorf(ctx, "client.Get: %v", err)
 		}
 
-		filter.rules = make(map[string]string)
-		filter.rules[rule.Text] = rule.TextReply
+		rxRule := regexp.MustCompile(rule.RxText)
 
-		if i := strings.Index(update.Message.Text, rule.Text); i != -1 {
-			filter.Trigger(update, rule.Text)
+		if rxRule.MatchString(update.Message.Text) {
+			filter.Trigger(update, rule)
 		}
 	}
 
@@ -125,8 +123,8 @@ func (filter TextFilter) RunCommand(cmd string, cmdarg CommandArguments) {
 	}
 }
 
-func (filter TextFilter) Trigger(update tgbotapi.Update, reply string) {
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID, filter.rules[reply])
+func (filter TextFilter) Trigger(update tgbotapi.Update, rule TextFilterRule) {
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, rule.TextReply)
 	filter.bot.Send(msg)
 }
 
@@ -165,7 +163,7 @@ func addUserRule(ctx context.Context, update tgbotapi.Update) (err error) {
 	rule := TextFilterRule{
 		ChatID:    update.Message.Chat.ID,
 		UserID:    user,
-		Text:      text,
+		RxText:    text,
 		TextReply: textreply,
 		Count:     0,
 		Limit:     int(count),
@@ -203,7 +201,7 @@ func addStaticRule(ctx context.Context, update tgbotapi.Update) (err error) {
 	ruleKey := datastore.NameKey(kind, key, nil)
 	userRule := TextFilterRule{
 		ChatID:    update.Message.Chat.ID,
-		Text:      text,
+		RxText:    text,
 		TextReply: textreply,
 	}
 

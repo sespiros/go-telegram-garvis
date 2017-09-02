@@ -96,7 +96,7 @@ func garvis(bot *tgbotapi.BotAPI, ctx context.Context, update tgbotapi.Update) {
 	done := make(chan bool)
 	filters = append(filters, CapsFilter{bot, ctx, done})
 	filters = append(filters, TldrFilter{bot, ctx, done})
-	filters = append(filters, TextFilter{bot: bot, ctx: ctx, done: done})
+	filters = append(filters, TextFilter{bot, ctx, done})
 
 	filterCommands := make(map[string]Filter)
 
