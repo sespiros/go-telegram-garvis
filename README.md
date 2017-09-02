@@ -15,11 +15,6 @@ It can be used:
 - Generic filter system for easy creation of new filters and plugins
 - Communication using Webhooks, making it easily scalable for environments like App Engine that spawn multiple instances for each request
 
-## Rules added so far
-- **Caps rule**: When a message is sent using all uppercase characters (stop shouting!)
-- **TL;DR rule**: When a message exceeds a specified length
-- **TextFilter**: This is a more complicated programmable rule that allows the creation of text filters for a specific user that trigger when the user says something for a number of times. This rule is using GAE key-based datastore to store the filters and their state.
-
 ## Installation
 1. Fork the project
 2. Create a new bot in Telegram using [BotFather](https://core.telegram.org/bots#6-botfather)
@@ -37,3 +32,29 @@ It can be used:
 8. Activate it by visiting https://{app-id}.appspot.com/{telegram-bot-key}/start
 9. Add it to a group (maybe)
 10. Leave the group (potentially)
+
+## Filters added so far
+- **Caps filter**: When a message is sent using all uppercase characters (stop shouting!)
+- **TL;DR filter**: When a message exceeds a specified length
+- **Text filter**: This is a more complicated programmable rule that allows the creation of text filters that trigger when a message is sent. This rule is using GAE key-based datastore to store the filters and their state.
+
+## Text filter examples
+
+- \addrule@testbot {regex matcher}~{reply}#{optional count (default: 1)}~{optional user}
+    - When a message that starts with hi is sent respond "Hi"
+
+      ```/addrule@testbot ^hi~Hi```
+
+    - When a message matching (ha)+ is sent 4 times respond "hahahah"
+
+       ```/addrule@testbot (ha)+#4~hahahah```
+
+    - When user @test says lol 3 times respond "lel"
+
+      ```/addrule@testbot lol#3~lel~@test```
+
+    - When user @test says lol respond "lel"
+
+      ```/addrule@testbot lol~lel~@test```
+
+[Playground for regex testing](https://play.golang.org/p/FtbBbarJUH)

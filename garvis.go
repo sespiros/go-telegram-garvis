@@ -104,7 +104,7 @@ func garvis(bot *tgbotapi.BotAPI, ctx context.Context, update tgbotapi.Update) {
 		r.GetCommands(filterCommands)
 	}
 
-	if isCommandForMe(bot, update.Message) {
+	if isCommandForMe(ctx, bot, update.Message) {
 		cmd := update.Message.Command()
 		if e, ok := filterCommands[cmd]; ok {
 			cmdarg := CommandArguments{ctx, update}
@@ -120,7 +120,7 @@ func garvis(bot *tgbotapi.BotAPI, ctx context.Context, update tgbotapi.Update) {
 	}
 }
 
-func isCommandForMe(bot *tgbotapi.BotAPI, m *tgbotapi.Message) bool {
+func isCommandForMe(ctx context.Context, bot *tgbotapi.BotAPI, m *tgbotapi.Message) bool {
 	if m.IsCommand() {
 		command := strings.SplitN(m.Text, " ", 2)[0][1:]
 
