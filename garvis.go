@@ -92,29 +92,29 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func garvis(bot *tgbotapi.BotAPI, ctx context.Context, update tgbotapi.Update) {
-	var rules []Rule
+	var filters []Filter
 	done := make(chan bool)
-	rules = append(rules, Caps{bot, ctx, done})
-	rules = append(rules, Tldr{bot, ctx, done})
-	rules = append(rules, TextFilter{bot, ctx, done})
+	filters = append(filters, CapsFilter{bot, ctx, done})
+	filters = append(filters, TldrFilter{bot, ctx, done})
+	filters = append(filters, TextFilter{bot: bot, ctx: ctx, done: done})
 
-	commandRules := make(map[string]Rule)
+	filterCommands := make(map[string]Filter)
 
-	for _, r := range rules {
-		r.GetCommands(commandRules)
+	for _, r := range filters {
+		r.GetCommands(filterCommands)
 	}
 
 	if isCommandForMe(bot, update.Message) {
 		cmd := update.Message.Command()
-		if e, ok := commandRules[cmd]; ok {
+		if e, ok := filterCommands[cmd]; ok {
 			cmdarg := CommandArguments{ctx, update}
 			e.RunCommand(cmd, cmdarg)
 		}
 	} else {
-		for _, r := range rules {
-			go r.Check(update)
+		for _, f := range filters {
+			go f.Run(update)
 		}
-		for i := 0; i < len(rules); i++ {
+		for i := 0; i < len(filters); i++ {
 			<-done
 		}
 	}

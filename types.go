@@ -11,11 +11,10 @@ type Configuration struct {
 	AppID    string
 }
 
-type Rule interface {
-	Check(tgbotapi.Update) error
-	GetCommands(map[string]Rule)
+type Filter interface {
+	Run(tgbotapi.Update) error
+	GetCommands(map[string]Filter)
 	RunCommand(string, CommandArguments)
-	Trigger(tgbotapi.Update)
 }
 
 type CommandArguments struct {

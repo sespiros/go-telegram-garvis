@@ -4,7 +4,7 @@
 
 Garvis is a rule-based AI bot for Telegram written in Go. It is built using [go-telegram-bot-api](https://github.com/go-telegram-bot-api/telegram-bot-api). It is written for Google App Engine but is easily ported to be hosted anywhere.
 
-I created Garvis in the process of learning Go and trying to create a bot to mimic some of my reactions in Telegram group chats. For the time being it is following a fairly simple process by checking each rule against each message sent in a group.
+I created Garvis in the process of learning Go and trying to create a bot to mimic some of my reactions in Telegram group chats. For the time being it is following a fairly simple process by passing each message sent in a group through every filter available.
 
 It can be used:
 - as an autoresponder in group chats
@@ -12,7 +12,7 @@ It can be used:
 - for gradually replacing yourself in group chats. (WIP: adding rules for all the modes of sarcasm, might use some sentiment analysis, might use some ML to make it learn from my responses hmmm... will see [:)](http://s.quickmeme.com/img/85/85b932b4dc1387653b77a77e6c3a7f0f18aff9dd27cb023f6eac2deec947f29c.jpg) )
 
 ## Features
-- Generic rule system for easy creation of new rules and plugins
+- Generic filter system for easy creation of new filters and plugins
 - Communication using Webhooks, making it easily scalable for environments like App Engine that spawn multiple instances for each request
 
 ## Rules added so far
@@ -32,7 +32,7 @@ It can be used:
     "AppID": "YOUR GAE APP ID HERE"
 }
 ```
-6. Create your own rules
+6. Create your own filters
 7. Deploy it
 8. Activate it by visiting https://{app-id}.appspot.com/{telegram-bot-key}/start
 9. Add it to a group (maybe)

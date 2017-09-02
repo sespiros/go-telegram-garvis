@@ -9,37 +9,37 @@ import (
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 )
 
-type Caps struct {
+type CapsFilter struct {
 	bot  *tgbotapi.BotAPI
 	ctx  context.Context
 	done chan bool
 }
 
-func (rule Caps) Check(update tgbotapi.Update) error {
+func (filter CapsFilter) Run(update tgbotapi.Update) error {
 	m := update.Message.Text
 
-	if checkCaps(m) {
-		rule.Trigger(update)
+	if checkCapsFilter(m) {
+		filter.Trigger(update)
 	}
 
-	rule.done <- true
+	filter.done <- true
 	return nil
 }
 
-func (rule Caps) GetCommands(map[string]Rule) {
+func (filter CapsFilter) GetCommands(map[string]Filter) {
 
 }
 
-func (rule Caps) RunCommand(string, CommandArguments) {
+func (filter CapsFilter) RunCommand(string, CommandArguments) {
 
 }
 
-func (rule Caps) Trigger(update tgbotapi.Update) {
+func (filter CapsFilter) Trigger(update tgbotapi.Update) {
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, "SHUT THE FUCK UP MATE")
-	rule.bot.Send(msg)
+	filter.bot.Send(msg)
 }
 
-func checkCaps(m string) bool {
+func checkCapsFilter(m string) bool {
 	var emojiRx = regexp.MustCompile(`[\x{1F600}-\x{1F6FF}|[\x{2600}-\x{26FF}]`)
 	m = emojiRx.ReplaceAllString(m, ``)
 	var symbolRx = regexp.MustCompile(`[^\pL\s]`)
