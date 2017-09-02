@@ -40,10 +40,14 @@ func (filter CapsFilter) Trigger(update tgbotapi.Update) {
 }
 
 func checkCapsFilter(m string) bool {
-	var emojiRx = regexp.MustCompile(`[\x{1F600}-\x{1F6FF}|[\x{2600}-\x{26FF}]`)
+	// Strip emojis and symbols
+	emojiRx := regexp.MustCompile(`[\x{1F600}-\x{1F6FF}|[\x{2600}-\x{26FF}]|[^\pL\s]`)
 	m = emojiRx.ReplaceAllString(m, ``)
-	var symbolRx = regexp.MustCompile(`[^\pL\s]`)
-	m = symbolRx.ReplaceAllString(m, ``)
+
+	// Exclude laughing
+	laughingRx := regexp.MustCompile(`((H|X)A)+`)
+	m = laughingRx.ReplaceAllString(m, ``)
+
 	if m == strings.ToUpper(m) && len(m) > 5 {
 		return true
 	}
