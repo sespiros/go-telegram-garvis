@@ -130,6 +130,9 @@ func (filter TextFilter) Trigger(update tgbotapi.Update, rule TextFilterRule) {
 
 func addUserRule(ctx context.Context, update tgbotapi.Update) (err error) {
 	command := strings.SplitN(update.Message.Text, " ", 2)
+	if len(command) < 2 {
+		return nil
+	}
 	argstr := command[1]
 	args := strings.SplitN(argstr, "~", 4)
 	if len(args) < 4 {
@@ -183,6 +186,9 @@ func addUserRule(ctx context.Context, update tgbotapi.Update) (err error) {
 
 func addStaticRule(ctx context.Context, update tgbotapi.Update) (err error) {
 	command := strings.SplitN(update.Message.Text, " ", 2)
+	if len(command) < 2 {
+		return nil
+	}
 	argstr := command[1]
 	args := strings.SplitN(argstr, "~", 2)
 	if len(args) < 2 {
