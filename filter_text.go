@@ -1,8 +1,8 @@
 package garvis
 
 import (
+	"bytes"
 	"fmt"
-	"log"
 	"regexp"
 	"strconv"
 	"strings"
@@ -69,7 +69,7 @@ func (filter TextFilter) Run(update tgbotapi.Update) error {
 				if err != nil {
 					glog.Errorf(ctx, "client.Put(reset): %v", err)
 				}
-				filter.Trigger(update, rule)
+				filter.Trigger(rule)
 			}
 			_, err = datastore.Put(ctx, k, &rule)
 			if err != nil {
@@ -84,29 +84,39 @@ func (filter TextFilter) Run(update tgbotapi.Update) error {
 
 func (filter TextFilter) GetCommands(commands map[string]Filter) {
 	commands["addrule"] = filter
+	commands["deleterule"] = filter
+	commands["listrules"] = filter
 }
 
 func (filter TextFilter) RunCommand(cmd string, cmdarg CommandArguments) {
-	ctx := cmdarg.ctx
 	update := cmdarg.update
 	var err error
 	switch cmd {
 	case "addrule":
-		err = addRule(ctx, update)
+		err = filter.addRule(update)
+	case "deleterule":
+		err = filter.deleteRule(update)
+	case "listrules":
+		err = filter.listRules(update)
 	}
 	if err != nil {
-		log.Fatal(err)
+		glog.Errorf(filter.ctx, err.Error())
 	}
 }
 
-func (filter TextFilter) Trigger(update tgbotapi.Update, rule TextFilterRule) {
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID, rule.TextReply)
+func (filter TextFilter) Trigger(rule TextFilterRule) {
+	msg := tgbotapi.NewMessage(rule.ChatID, rule.TextReply)
 	filter.bot.Send(msg)
 }
 
-func addRule(ctx context.Context, update tgbotapi.Update) (err error) {
+func (filter TextFilter) addRule(update tgbotapi.Update) (err error) {
+	ctx := filter.ctx
+
 	command := strings.SplitN(update.Message.Text, " ", 2)
 	if len(command) < 2 {
+		usage := "Usage: /addrule {regex matcher}~{reply}{#count (optional default: 1)}~{user (optional)}"
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, usage)
+		filter.bot.Send(msg)
 		return nil
 	}
 	argstr := command[1]
@@ -140,8 +150,8 @@ func addRule(ctx context.Context, update tgbotapi.Update) (err error) {
 	}
 	textreply := args[1]
 
-	key := fmt.Sprintf("%v-%v-%v", update.Message.Chat.ID, text, userID)
-	ruleKey := datastore.NewKey(ctx, "Rule", key, 0, nil)
+	keyl, _, _ := datastore.AllocateIDs(ctx, "Rule", nil, 1)
+	ruleKey := datastore.NewKey(ctx, "Rule", "", keyl, nil)
 	rule := TextFilterRule{
 		ChatID:    update.Message.Chat.ID,
 		RxText:    text,
@@ -163,16 +173,53 @@ func addRule(ctx context.Context, update tgbotapi.Update) (err error) {
 	return err
 }
 
-func getUserID(ctx context.Context, mention string) (int, error) {
-	var user User
-	key := datastore.NewKey(ctx, "User", mention, 0, nil)
-	err := datastore.Get(ctx, key, &user)
-	if err != nil {
-		glog.Errorf(ctx, "Error fetching user: %v", err)
-		return -1, err
+func (filter TextFilter) deleteRule(update tgbotapi.Update) (err error) {
+	ctx := filter.ctx
+
+	command := strings.SplitN(update.Message.Text, " ", 2)
+	if len(command) < 2 {
+		usage := "Usage: /deleterule {ruleID}"
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, usage)
+		filter.bot.Send(msg)
+		return nil
+	}
+	key, _ := strconv.ParseInt(command[1], 10, 64)
+	ruleKey := datastore.NewKey(ctx, "Rule", "", key, nil)
+
+	if err = datastore.Delete(filter.ctx, ruleKey); err != datastore.ErrNoSuchEntity {
+		return err
 	}
 
-	return user.UserID, nil
+	return err
+}
+
+func (filter TextFilter) listRules(update tgbotapi.Update) error {
+	ctx := filter.ctx
+
+	query := datastore.NewQuery("Rule").Filter("ChatID = ", update.Message.Chat.ID)
+
+	var buffer bytes.Buffer
+
+	header := fmt.Sprintf("|%s|%s|%s|%s|%s|\n", "ID", "Regex", "Reply", "Count", "User(0 for all)")
+	buffer.WriteString(header)
+	buffer.WriteString(strings.Repeat("-", 32) + "\n")
+
+	for t := query.Run(ctx); ; {
+		var rule TextFilterRule
+		k, err := t.Next(&rule)
+		if err == datastore.Done {
+			break
+		}
+
+		ruleText := fmt.Sprintf("|%v|%v|%v|%v|%v|\n", k.IntID(), rule.RxText, rule.TextReply, rule.Limit, rule.UserID)
+
+		buffer.WriteString(ruleText)
+	}
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, buffer.String())
+	filter.bot.Send(msg)
+
+	return nil
 }
 
 func updateUsers(ctx context.Context, update tgbotapi.Update) (err error) {
@@ -191,4 +238,16 @@ func updateUsers(ctx context.Context, update tgbotapi.Update) (err error) {
 	}, nil)
 
 	return err
+}
+
+func getUserID(ctx context.Context, mention string) (int, error) {
+	var user User
+	key := datastore.NewKey(ctx, "User", mention, 0, nil)
+	err := datastore.Get(ctx, key, &user)
+	if err != nil {
+		glog.Errorf(ctx, "Error fetching user: %v", err)
+		return -1, err
+	}
+
+	return user.UserID, nil
 }

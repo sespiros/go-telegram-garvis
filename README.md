@@ -39,23 +39,23 @@ It can be used:
 
 ## Text filter examples
 
-- \addrule@testbot {regex matcher}~{reply}#{optional count (default: 1)}~{optional user}
+- \addrule {regex matcher}\~{reply}{#count (optional default: 1)}\~{user (optional)}
 
     **The regex matcher is enclosed by default with (?i) for case sensitivity, for case insensitive rules break it with (?-i)**
     - When a message that starts with hi is sent respond "Hi"
 
-      ```/addrule@testbot ^hi~Hi```
+      ```/addrule ^hi~Hi```
 
     - When a message matching (ha)+ is sent 4 times respond "hahahah"
 
-       ```/addrule@testbot (ha)+#4~hahahah```
+       ```/addrule (ha)+#4~hahahah```
 
     - When user @test says lol 3 times respond "lel"
 
-      ```/addrule@testbot lol#3~lel~@test```
+      ```/addrule lol#3~lel~@test```
 
     - When user @test says lol respond "lel"
 
-      ```/addrule@testbot lol~lel~@test```
+      ```/addrule lol~lel~@test```
 
 [Playground for regex testing](https://play.golang.org/p/FtbBbarJUH)
