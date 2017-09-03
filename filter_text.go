@@ -27,6 +27,8 @@ type TextFilterRule struct {
 	Count     int
 	Limit     int
 	UserID    int
+	Hidden    bool
+	CreatorID int
 }
 
 type User struct {
@@ -86,6 +88,7 @@ func (filter TextFilter) GetCommands(commands map[string]Filter) {
 	commands["addrule"] = filter
 	commands["deleterule"] = filter
 	commands["listrules"] = filter
+	commands["addhiddenrule"] = filter
 }
 
 func (filter TextFilter) RunCommand(cmd string, cmdarg CommandArguments) {
@@ -93,11 +96,13 @@ func (filter TextFilter) RunCommand(cmd string, cmdarg CommandArguments) {
 	var err error
 	switch cmd {
 	case "addrule":
-		err = filter.addRule(update)
+		err = filter.addRule(update, false)
 	case "deleterule":
 		err = filter.deleteRule(update)
 	case "listrules":
 		err = filter.listRules(update)
+	case "addhiddenrule":
+		err = filter.addRule(update, true)
 	}
 	if err != nil {
 		glog.Errorf(filter.ctx, err.Error())
@@ -109,7 +114,7 @@ func (filter TextFilter) Trigger(rule TextFilterRule) {
 	filter.bot.Send(msg)
 }
 
-func (filter TextFilter) addRule(update tgbotapi.Update) (err error) {
+func (filter TextFilter) addRule(update tgbotapi.Update, hidden bool) (err error) {
 	ctx := filter.ctx
 
 	command := strings.SplitN(update.Message.Text, " ", 2)
@@ -142,6 +147,13 @@ func (filter TextFilter) addRule(update tgbotapi.Update) (err error) {
 	}
 	arg1 := strings.SplitN(args[0], "#", 2)
 	text := fmt.Sprintf("(?i)%v(?-i)", arg1[0])
+	_, err = regexp.Compile(text)
+	if err != nil {
+		usage := "Invalid Regex"
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, usage)
+		filter.bot.Send(msg)
+		return nil
+	}
 	var limit int
 	if len(arg1) < 2 {
 		limit = 1
@@ -152,6 +164,10 @@ func (filter TextFilter) addRule(update tgbotapi.Update) (err error) {
 
 	keyl, _, _ := datastore.AllocateIDs(ctx, "Rule", nil, 1)
 	ruleKey := datastore.NewKey(ctx, "Rule", "", keyl, nil)
+	var creatorID int
+	if creatorID, err = getUserID(ctx, update.Message.From.UserName); err != nil {
+		return err
+	}
 	rule := TextFilterRule{
 		ChatID:    update.Message.Chat.ID,
 		RxText:    text,
@@ -159,16 +175,11 @@ func (filter TextFilter) addRule(update tgbotapi.Update) (err error) {
 		Count:     0,
 		Limit:     int(limit),
 		UserID:    userID,
+		CreatorID: creatorID,
+		Hidden:    hidden,
 	}
 
-	err = datastore.RunInTransaction(ctx, func(ctx context.Context) error {
-		var empty TextFilterRule
-		if err := datastore.Get(ctx, ruleKey, &empty); err != datastore.ErrNoSuchEntity {
-			return err
-		}
-		_, err := datastore.Put(ctx, ruleKey, &rule)
-		return err
-	}, nil)
+	_, err = datastore.Put(ctx, ruleKey, &rule)
 
 	return err
 }
@@ -186,32 +197,63 @@ func (filter TextFilter) deleteRule(update tgbotapi.Update) (err error) {
 	key, _ := strconv.ParseInt(command[1], 10, 64)
 	ruleKey := datastore.NewKey(ctx, "Rule", "", key, nil)
 
-	if err = datastore.Delete(filter.ctx, ruleKey); err != datastore.ErrNoSuchEntity {
+	var userID int
+	if userID, err = getUserID(ctx, update.Message.From.UserName); err != nil {
 		return err
 	}
+
+	err = datastore.RunInTransaction(ctx, func(ctx context.Context) error {
+		var rule TextFilterRule
+		err := datastore.Get(ctx, ruleKey, &rule)
+		if err != nil {
+			return err
+		}
+
+		if rule.ChatID == update.Message.Chat.ID || rule.CreatorID == userID {
+			err = datastore.Delete(ctx, ruleKey)
+		}
+
+		return err
+	}, nil)
 
 	return err
 }
 
-func (filter TextFilter) listRules(update tgbotapi.Update) error {
+func (filter TextFilter) listRules(update tgbotapi.Update) (err error) {
 	ctx := filter.ctx
 
-	query := datastore.NewQuery("Rule").Filter("ChatID = ", update.Message.Chat.ID)
-
 	var buffer bytes.Buffer
+	var query *datastore.Query
+	var header string
 
-	header := fmt.Sprintf("|%s|%s|%s|%s|%s|\n", "ID", "Regex", "Reply", "Count", "User(0 for all)")
+	if update.Message.Chat.Type == "private" {
+		var userID int
+		if userID, err = getUserID(ctx, update.Message.From.UserName); err != nil {
+			return err
+		}
+		query = datastore.NewQuery("Rule").Filter("CreatorID = ", userID)
+		header = fmt.Sprintf("|%s|%s|%s|%s|%s|%s|\n", "Chat name", "ID", "Regex", "Reply", "Count", "User(0 for all)")
+	} else {
+		query = datastore.NewQuery("Rule").Filter("ChatID = ", update.Message.Chat.ID)
+		header = fmt.Sprintf("|%s|%s|%s|%s|%s|\n", "ID", "Regex", "Reply", "Count", "User(0 for all)")
+	}
 	buffer.WriteString(header)
-	buffer.WriteString(strings.Repeat("-", 32) + "\n")
 
 	for t := query.Run(ctx); ; {
 		var rule TextFilterRule
+		var ruleText string
+
 		k, err := t.Next(&rule)
 		if err == datastore.Done {
 			break
 		}
 
-		ruleText := fmt.Sprintf("|%v|%v|%v|%v|%v|\n", k.IntID(), rule.RxText, rule.TextReply, rule.Limit, rule.UserID)
+		if update.Message.Chat.Type == "private" {
+			chat, _ := filter.bot.GetChat(tgbotapi.ChatConfig{ChatID: rule.ChatID})
+			ruleText = fmt.Sprintf("|%v|%v|%v|%v|%v|%v|\n", chat.Title, k.IntID(), rule.RxText, rule.TextReply, rule.Limit, rule.UserID)
+		} else if !rule.Hidden {
+			ruleText = fmt.Sprintf("|%v|%v|%v|%v|%v|\n", k.IntID(), rule.RxText, rule.TextReply, rule.Limit, rule.UserID)
+		}
 
 		buffer.WriteString(ruleText)
 	}
