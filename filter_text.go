@@ -142,7 +142,7 @@ func addRule(ctx context.Context, update tgbotapi.Update) (err error) {
 	glog.Debugf(ctx, fmt.Sprintf("%v", userID))
 	arg1 := strings.SplitN(args[0], "#", 2)
 	glog.Debugf(ctx, fmt.Sprintf("%v", arg1))
-	text := arg1[0]
+	text := fmt.Sprintf("(?i)%v(?-i)", arg1[0])
 	var limit int
 	if len(arg1) < 2 {
 		limit = 1

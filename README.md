@@ -23,8 +23,7 @@ It can be used:
 5. Create a config.json
 ```
 {
-    "TgBotKey": "YOUR KEY HERE",
-    "AppID": "YOUR GAE APP ID HERE"
+    "TgBotKey": "YOUR KEY HERE"
 }
 ```
 6. Create your own filters
@@ -41,6 +40,8 @@ It can be used:
 ## Text filter examples
 
 - \addrule@testbot {regex matcher}~{reply}#{optional count (default: 1)}~{optional user}
+
+    **The regex matcher is enclosed by default with (?i) for case sensitivity, for case insensitive rules break it with (?-i)**
     - When a message that starts with hi is sent respond "Hi"
 
       ```/addrule@testbot ^hi~Hi```
