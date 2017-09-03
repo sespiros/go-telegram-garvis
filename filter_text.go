@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"cloud.google.com/go/datastore"
 	"golang.org/x/net/context"
+	"google.golang.org/appengine/datastore"
 	glog "google.golang.org/appengine/log"
 
 	"github.com/go-telegram-bot-api/telegram-bot-api"
@@ -35,7 +35,6 @@ type User struct {
 }
 
 func (filter TextFilter) Run(update tgbotapi.Update) error {
-	projectID := config.AppID
 	ctx := filter.ctx
 
 	// It is not possible to match usernames to user ids from the API
@@ -43,28 +42,22 @@ func (filter TextFilter) Run(update tgbotapi.Update) error {
 	// for lookup
 	updateUsers(ctx, update)
 
-	client, err := datastore.NewClient(ctx, projectID)
-	if err != nil {
-		log.Fatal(err)
-	}
+	query := datastore.NewQuery("Rule").Filter("ChatID = ", update.Message.Chat.ID)
+	queryUserRules := query.Filter("UserID = ", update.Message.From.ID)
+	queryStaticRules := query.Filter("UserID = ", 0)
 
-	query := datastore.NewQuery("Rule").KeysOnly().
-		Filter("ChatID = ", update.Message.Chat.ID)
-	queryUser := query.Filter("UserID = ", update.Message.From.ID)
-	queryStatic := query.Filter("UserID = ", 0)
-
-	userkeys, err := client.GetAll(ctx, queryUser, nil)
-	statickeys, err := client.GetAll(ctx, queryStatic, nil)
+	var userRules []TextFilterRule
+	var staticRules []TextFilterRule
+	userKeys, err := queryUserRules.GetAll(ctx, &userRules)
+	staticKeys, err := queryStaticRules.GetAll(ctx, &staticRules)
 	if err != nil {
 		glog.Errorf(ctx, "client.GetAll: %v", err)
 	}
+	rules := append(userRules, staticRules...)
+	keys := append(userKeys, staticKeys...)
 
-	for _, ruleKey := range append(userkeys, statickeys...) {
-		var rule TextFilterRule
-		err = client.Get(ctx, ruleKey, &rule)
-		if err != nil {
-			glog.Errorf(ctx, "client.Get: %v", err)
-		}
+	for i, rule := range rules {
+		k := keys[i]
 
 		rxRule := regexp.MustCompile(rule.RxText)
 
@@ -72,13 +65,13 @@ func (filter TextFilter) Run(update tgbotapi.Update) error {
 			rule.Count = rule.Count + 1
 			if rule.Count >= rule.Limit {
 				rule.Count = 0
-				_, err = client.Put(ctx, ruleKey, &rule)
+				_, err = datastore.Put(ctx, k, &rule)
 				if err != nil {
 					glog.Errorf(ctx, "client.Put(reset): %v", err)
 				}
 				filter.Trigger(update, rule)
 			}
-			_, err = client.Put(ctx, ruleKey, &rule)
+			_, err = datastore.Put(ctx, k, &rule)
 			if err != nil {
 				glog.Errorf(ctx, "client.Put: %v", err)
 			}
@@ -113,13 +106,11 @@ func (filter TextFilter) Trigger(update tgbotapi.Update, rule TextFilterRule) {
 
 func addRule(ctx context.Context, update tgbotapi.Update) (err error) {
 	command := strings.SplitN(update.Message.Text, " ", 2)
-	glog.Debugf(ctx, fmt.Sprintf("%v", command))
 	if len(command) < 2 {
 		return nil
 	}
 	argstr := command[1]
 	args := strings.SplitN(argstr, "~", 3)
-	glog.Debugf(ctx, fmt.Sprintf("%v", args))
 	var userID int
 	switch len(args) {
 	case 2:
@@ -139,9 +130,7 @@ func addRule(ctx context.Context, update tgbotapi.Update) (err error) {
 	default:
 		return nil
 	}
-	glog.Debugf(ctx, fmt.Sprintf("%v", userID))
 	arg1 := strings.SplitN(args[0], "#", 2)
-	glog.Debugf(ctx, fmt.Sprintf("%v", arg1))
 	text := fmt.Sprintf("(?i)%v(?-i)", arg1[0])
 	var limit int
 	if len(arg1) < 2 {
@@ -151,15 +140,8 @@ func addRule(ctx context.Context, update tgbotapi.Update) (err error) {
 	}
 	textreply := args[1]
 
-	client, err := datastore.NewClient(ctx, config.AppID)
-	if err != nil {
-		return err
-	}
-
-	kind := "Rule"
 	key := fmt.Sprintf("%v-%v-%v", update.Message.Chat.ID, text, userID)
-
-	ruleKey := datastore.NameKey(kind, key, nil)
+	ruleKey := datastore.NewKey(ctx, "Rule", key, 0, nil)
 	rule := TextFilterRule{
 		ChatID:    update.Message.Chat.ID,
 		RxText:    text,
@@ -168,29 +150,23 @@ func addRule(ctx context.Context, update tgbotapi.Update) (err error) {
 		Limit:     int(limit),
 		UserID:    userID,
 	}
-	glog.Debugf(ctx, fmt.Sprintf("%v", rule))
 
-	_, err = client.RunInTransaction(ctx, func(tx *datastore.Transaction) error {
+	err = datastore.RunInTransaction(ctx, func(ctx context.Context) error {
 		var empty TextFilterRule
-		if err := tx.Get(ruleKey, &empty); err != datastore.ErrNoSuchEntity {
+		if err := datastore.Get(ctx, ruleKey, &empty); err != datastore.ErrNoSuchEntity {
 			return err
 		}
-		_, err := tx.Put(ruleKey, &rule)
+		_, err := datastore.Put(ctx, ruleKey, &rule)
 		return err
-	})
+	}, nil)
 
 	return err
 }
 
 func getUserID(ctx context.Context, mention string) (int, error) {
-	client, err := datastore.NewClient(ctx, config.AppID)
-	if err != nil {
-		return -1, err
-	}
-
 	var user User
-	key := datastore.NameKey("User", mention, nil)
-	err = client.Get(ctx, key, &user)
+	key := datastore.NewKey(ctx, "User", mention, 0, nil)
+	err := datastore.Get(ctx, key, &user)
 	if err != nil {
 		glog.Errorf(ctx, "Error fetching user: %v", err)
 		return -1, err
@@ -199,26 +175,20 @@ func getUserID(ctx context.Context, mention string) (int, error) {
 	return user.UserID, nil
 }
 
-func updateUsers(ctx context.Context, update tgbotapi.Update) error {
-	client, err := datastore.NewClient(ctx, config.AppID)
-	if err != nil {
-		return err
-	}
-
-	kind := "User"
-	userKey := datastore.NameKey(kind, update.Message.From.UserName, nil)
+func updateUsers(ctx context.Context, update tgbotapi.Update) (err error) {
+	userKey := datastore.NewKey(ctx, "User", update.Message.From.UserName, 0, nil)
 	user := User{
 		UserID:   update.Message.From.ID,
 		UserName: update.Message.From.UserName,
 	}
-	_, err = client.RunInTransaction(ctx, func(tx *datastore.Transaction) error {
+	err = datastore.RunInTransaction(ctx, func(ctx context.Context) error {
 		var empty User
-		if err := tx.Get(userKey, &empty); err != datastore.ErrNoSuchEntity {
+		if err := datastore.Get(ctx, userKey, &empty); err != datastore.ErrNoSuchEntity {
 			return err
 		}
-		_, err := tx.Put(userKey, &user)
+		_, err := datastore.Put(ctx, userKey, &user)
 		return err
-	})
+	}, nil)
 
 	return err
 }

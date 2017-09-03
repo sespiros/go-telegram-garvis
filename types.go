@@ -8,7 +8,6 @@ import (
 
 type Configuration struct {
 	TgBotKey string
-	AppID    string
 }
 
 type Filter interface {
