@@ -119,7 +119,7 @@ func (filter TextFilter) addRule(update tgbotapi.Update, hidden bool) (err error
 
 	command := strings.SplitN(update.Message.Text, " ", 2)
 	if len(command) < 2 {
-		usage := "Usage: /addrule {regex matcher}~{reply}{#count (optional default: 1)}~{user (optional)}"
+		usage := "Usage: /addrule [regex matcher case insensitive by default]~[reply][#count (optional default: 1)]~[user (optional)]"
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, usage)
 		filter.bot.Send(msg)
 		return nil
@@ -146,7 +146,7 @@ func (filter TextFilter) addRule(update tgbotapi.Update, hidden bool) (err error
 		return nil
 	}
 	arg1 := strings.SplitN(args[0], "#", 2)
-	text := fmt.Sprintf("(?i)%v(?-i)", arg1[0])
+	text := fmt.Sprintf("(?i)%v", arg1[0])
 	_, err = regexp.Compile(text)
 	if err != nil {
 		usage := "Invalid Regex"
@@ -185,7 +185,7 @@ func (filter TextFilter) deleteRule(update tgbotapi.Update) (err error) {
 
 	command := strings.SplitN(update.Message.Text, " ", 2)
 	if len(command) < 2 {
-		usage := "Usage: /deleterule {ruleID}"
+		usage := "Usage: /deleterule [ruleID]"
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, usage)
 		filter.bot.Send(msg)
 		return nil
@@ -222,30 +222,50 @@ func (filter TextFilter) listRules(update tgbotapi.Update) (err error) {
 	if update.Message.Chat.Type == "private" {
 		userID := update.Message.From.ID
 		query = datastore.NewQuery("Rule").Filter("CreatorID = ", userID)
-		header = fmt.Sprintf("|%s|%s|%s|%s|%s|%s|\n", "Chat name", "ID", "Regex", "Reply", "Count", "User(0 for all)")
+		header = fmt.Sprintf("|%s|%s%s%s%s|%s|\n", "ID", "Regex", "~Reply", "(#Count)", "(~For User)", "Chat name")
 	} else {
 		query = datastore.NewQuery("Rule").Filter("ChatID = ", update.Message.Chat.ID)
-		header = fmt.Sprintf("|%s|%s|%s|%s|%s|\n", "ID", "Regex", "Reply", "Count", "User(0 for all)")
+		header = fmt.Sprintf("|%s|%s%s%s%s|\n", "ID", "Regex", "~Reply", "(#Count)", "(~For User)")
 	}
+	buffer.WriteString("All the Regexes are prepended with (?i) to be case insensitive\n")
 	buffer.WriteString(header)
+	buffer.String()
 
 	for t := query.Run(ctx); ; {
 		var rule TextFilterRule
-		var ruleText string
+		var userName string
+		var userID int
 
 		k, err := t.Next(&rule)
 		if err == datastore.Done {
 			break
 		}
 
-		if update.Message.Chat.Type == "private" {
-			chat, _ := filter.bot.GetChat(tgbotapi.ChatConfig{ChatID: rule.ChatID})
-			ruleText = fmt.Sprintf("|%v|%v|%v|%v|%v|%v|\n", chat.Title, k.IntID(), rule.RxText, rule.TextReply, rule.Limit, rule.UserID)
-		} else if !rule.Hidden {
-			ruleText = fmt.Sprintf("|%v|%v|%v|%v|%v|\n", k.IntID(), rule.RxText, rule.TextReply, rule.Limit, rule.UserID)
+		if rule.UserID != 0 {
+			userName, userID, _ = getUserName(ctx, rule.UserID)
 		}
 
-		buffer.WriteString(ruleText)
+		if update.Message.Chat.Type == "private" || !rule.Hidden {
+			// strip (?i) rule that makes the regexes case-sensitive by default before showing
+			buffer.WriteString(fmt.Sprintf("|%v|%v~%v", k.IntID(), rule.RxText[4:], rule.TextReply))
+			if rule.Limit != 1 {
+				buffer.WriteString(fmt.Sprintf("#%v", rule.Limit))
+			}
+			if rule.UserID != 0 {
+				if userName != "" {
+					buffer.WriteString(fmt.Sprintf("~@%v", userName))
+				} else {
+					buffer.WriteString(fmt.Sprintf("~{%v}", userID))
+				}
+			}
+
+			if update.Message.Chat.Type == "private" {
+				chat, _ := filter.bot.GetChat(tgbotapi.ChatConfig{ChatID: rule.ChatID})
+				buffer.WriteString(fmt.Sprintf("|%v", chat.Title))
+			}
+
+			buffer.WriteString(fmt.Sprintf("|\n"))
+		}
 	}
 
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, buffer.String())
@@ -282,4 +302,18 @@ func getUserID(ctx context.Context, mention string) (int, error) {
 	}
 
 	return user.UserID, nil
+}
+
+/* Return User's ID if user doesn't have a username and therefore doesn't exist in the database */
+func getUserName(ctx context.Context, userID int) (string, int, error) {
+	var users []User
+	query := datastore.NewQuery("User").Filter("UserID = ", userID)
+
+	query.GetAll(ctx, &users)
+
+	if len(users) == 0 {
+		return "", userID, nil
+	}
+
+	return users[0].UserName, 0, nil
 }
