@@ -119,7 +119,7 @@ func (filter TextFilter) addRule(update tgbotapi.Update, hidden bool) (err error
 
 	command := strings.SplitN(update.Message.Text, " ", 2)
 	if len(command) < 2 {
-		usage := "Usage: /addrule [regex matcher case insensitive by default]~[reply][#count (optional default: 1)]~[user (optional)]"
+		usage := "Usage: /addrule [regex matcher case insensitive by default][#count (optional default: 1)]~[reply]~[user (optional)]"
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, usage)
 		filter.bot.Send(msg)
 		return nil
@@ -127,24 +127,32 @@ func (filter TextFilter) addRule(update tgbotapi.Update, hidden bool) (err error
 	argstr := command[1]
 	args := strings.SplitN(argstr, "~", 3)
 	var userID int
-	switch len(args) {
-	case 2:
-		userID = 0
-	case 3:
-		ents := update.Message.Entities
-		for _, ent := range *ents {
-			switch ent.Type {
-			case "text_mention":
-				userID = ent.User.ID
-			case "mention":
-				if userID, err = getUserID(ctx, args[2][1:]); err != nil {
-					return err
+	if len(args) < 2 {
+		return nil
+	}
+
+	if args[1] == "" {
+		return nil
+	}
+
+	if len(args) >= 3 {
+		if args[2] == "" {
+			userID = 0
+		} else {
+			ents := update.Message.Entities
+			for _, ent := range *ents {
+				switch ent.Type {
+				case "text_mention":
+					userID = ent.User.ID
+				case "mention":
+					if userID, err = getUserID(ctx, args[2][1:]); err != nil {
+						return err
+					}
 				}
 			}
 		}
-	default:
-		return nil
 	}
+
 	arg1 := strings.SplitN(args[0], "#", 2)
 	text := fmt.Sprintf("(?i)%v", arg1[0])
 	_, err = regexp.Compile(text)
@@ -154,12 +162,17 @@ func (filter TextFilter) addRule(update tgbotapi.Update, hidden bool) (err error
 		filter.bot.Send(msg)
 		return nil
 	}
+
 	var limit int
 	if len(arg1) < 2 {
 		limit = 1
 	} else {
-		limit, _ = strconv.Atoi(arg1[1])
+		limit, err = strconv.Atoi(arg1[1])
+		if err != nil {
+			return nil
+		}
 	}
+
 	textreply := args[1]
 
 	keyl, _, _ := datastore.AllocateIDs(ctx, "Rule", nil, 1)
@@ -222,10 +235,10 @@ func (filter TextFilter) listRules(update tgbotapi.Update) (err error) {
 	if update.Message.Chat.Type == "private" {
 		userID := update.Message.From.ID
 		query = datastore.NewQuery("Rule").Filter("CreatorID = ", userID)
-		header = fmt.Sprintf("|%s|%s%s%s%s|%s|\n", "ID", "Regex", "~Reply", "(#Count)", "(~For User)", "Chat name")
+		header = fmt.Sprintf("|%s|%s%s%s%s|%s|\n", "ID", "Regex", "(#Count)", "~Reply", "(~For User)", "Chat name")
 	} else {
 		query = datastore.NewQuery("Rule").Filter("ChatID = ", update.Message.Chat.ID)
-		header = fmt.Sprintf("|%s|%s%s%s%s|\n", "ID", "Regex", "~Reply", "(#Count)", "(~For User)")
+		header = fmt.Sprintf("|%s|%s%s%s%s|\n", "ID", "Regex", "(#Count)", "~Reply", "(~For User)")
 	}
 	buffer.WriteString("All the Regexes are prepended with (?i) to be case insensitive\n")
 	buffer.WriteString(header)
@@ -247,10 +260,14 @@ func (filter TextFilter) listRules(update tgbotapi.Update) (err error) {
 
 		if update.Message.Chat.Type == "private" || !rule.Hidden {
 			// strip (?i) rule that makes the regexes case-sensitive by default before showing
-			buffer.WriteString(fmt.Sprintf("|%v|%v~%v", k.IntID(), rule.RxText[4:], rule.TextReply))
+			buffer.WriteString(fmt.Sprintf("|%v|%v", k.IntID(), rule.RxText[4:]))
+
 			if rule.Limit != 1 {
 				buffer.WriteString(fmt.Sprintf("#%v", rule.Limit))
 			}
+
+			buffer.WriteString(fmt.Sprintf("~%v", rule.TextReply))
+
 			if rule.UserID != 0 {
 				if userName != "" {
 					buffer.WriteString(fmt.Sprintf("~@%v", userName))

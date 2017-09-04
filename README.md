@@ -39,7 +39,7 @@ It can be used:
 
 ## Text filter examples
 
-- \addrule {regex matcher}\~{reply}{#count (optional default: 1)}\~{user (optional)}
+- \addrule [regex matcher][#count (optional default: 1)]\~[reply]\~[user (optional)]
 
     **The regex matcher is enclosed by default with (?i) for case sensitivity, for case insensitive rules break it with (?-i)**
     - When a message that starts with hi is sent respond "Hi"
