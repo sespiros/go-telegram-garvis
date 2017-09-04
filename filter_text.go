@@ -164,10 +164,6 @@ func (filter TextFilter) addRule(update tgbotapi.Update, hidden bool) (err error
 
 	keyl, _, _ := datastore.AllocateIDs(ctx, "Rule", nil, 1)
 	ruleKey := datastore.NewKey(ctx, "Rule", "", keyl, nil)
-	var creatorID int
-	if creatorID, err = getUserID(ctx, update.Message.From.UserName); err != nil {
-		return err
-	}
 	rule := TextFilterRule{
 		ChatID:    update.Message.Chat.ID,
 		RxText:    text,
@@ -175,7 +171,7 @@ func (filter TextFilter) addRule(update tgbotapi.Update, hidden bool) (err error
 		Count:     0,
 		Limit:     int(limit),
 		UserID:    userID,
-		CreatorID: creatorID,
+		CreatorID: update.Message.From.ID,
 		Hidden:    hidden,
 	}
 
@@ -197,10 +193,7 @@ func (filter TextFilter) deleteRule(update tgbotapi.Update) (err error) {
 	key, _ := strconv.ParseInt(command[1], 10, 64)
 	ruleKey := datastore.NewKey(ctx, "Rule", "", key, nil)
 
-	var userID int
-	if userID, err = getUserID(ctx, update.Message.From.UserName); err != nil {
-		return err
-	}
+	userID := update.Message.From.ID
 
 	err = datastore.RunInTransaction(ctx, func(ctx context.Context) error {
 		var rule TextFilterRule
@@ -227,10 +220,7 @@ func (filter TextFilter) listRules(update tgbotapi.Update) (err error) {
 	var header string
 
 	if update.Message.Chat.Type == "private" {
-		var userID int
-		if userID, err = getUserID(ctx, update.Message.From.UserName); err != nil {
-			return err
-		}
+		userID := update.Message.From.ID
 		query = datastore.NewQuery("Rule").Filter("CreatorID = ", userID)
 		header = fmt.Sprintf("|%s|%s|%s|%s|%s|%s|\n", "Chat name", "ID", "Regex", "Reply", "Count", "User(0 for all)")
 	} else {
